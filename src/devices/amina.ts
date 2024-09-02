@@ -96,24 +96,7 @@ const tzLocal = {
               case 'charge_limit':
                 await endpoint.read('genLevelCtrl', ['currentLevel'], aminaManufacturer);
                 break;
-              case 'power_phase_b':
-                await endpoint.read('haElectricalMeasurement', ['activePowerPhB']);
-                break;
-              case 'current_phase_b':
-                await endpoint.read('haElectricalMeasurement', ['rmsCurrentPhB']);
-                break;
-              case 'voltage_phase_b':
-                await endpoint.read('haElectricalMeasurement', ['rmsVoltagePhB']);
-                break;
-              case 'power_phase_c':
-                await endpoint.read('haElectricalMeasurement', ['activePowerPhC']);
-                break;
-              case 'current_phase_c':
-                await endpoint.read('haElectricalMeasurement', ['rmsCurrentPhC']);
-                break;
-              case 'voltage_phase_c':
-                await endpoint.read('haElectricalMeasurement', ['rmsVoltagePhC']);
-                break;
+            }
         },
     },
 };
@@ -127,27 +110,18 @@ const definition = {
     fromZigbee: [fzLocal.charge_limit, fz.electrical_measurement, fzLocal.amina_s, fz.frequency],
     toZigbee: [tzLocal.amina_s, tz.electrical_measurement_power, fz.frequency, tz.acvoltage, tz.accurrent],
     exposes: [e.numeric('charge_limit', ea.ALL).withUnit('A')
-                .withValueMin(6).withValueMax(32).withValueStep(1)
+                .withValueMin(6).withValueMax(32).withValueStep(1) // TODO: read min and max value from level control cluster
                 .withDescription('Maximum allowed amperage draw'),
               e.numeric('alarms', ea.STATE).withDescription('Alarms reported by EV Charger'),
               e.binary('alarm_active', ea.STATE, 'true', 'false').withDescription('An active alarm is present'),
 
-              e.ac_frequency().withAccess(ea.STATE_GET), // Needs divisor (?)
-              
-              // Electricity measurement
-              e.power().withAccess(ea.STATE_GET),
-              e.voltage().withAccess(ea.STATE_GET),
-              e.current().withAccess(ea.STATE_GET),
-              e.energy().withAccess(ea.STATE_GET),
-              e.power_phase_b().withAccess(ea.STATE_GET),
-              e.current_phase_b().withAccess(ea.STATE_GET), 
-              e.voltage_phase_b().withAccess(ea.STATE_GET),
-              e.power_phase_c().withAccess(ea.STATE_GET),
-              e.current_phase_c().withAccess(ea.STATE_GET),
-              e.voltage_phase_c().withAccess(ea.STATE_GET),
+              e.ac_frequency().withAccess(ea.STATE_GET), // TODO: Needs divisor of 10 read from device
         ],
 
     extend: [
+        electricityMeter({
+            'threePhase': true
+        }),
         deviceAddCustomCluster(
             'aminaControlCluster',
             {
@@ -157,6 +131,11 @@ const definition = {
                     alarms: {ID: Amina_S_Control.alarms, type: DataType.bitmap16},
                     evStatus: {ID: Amina_S_Control.ev_status, type: DataType.bitmap16},
                     connectStatus: {ID: Amina_S_Control.connect_status, type: DataType.bitmap16}, // Not implemented?
+                    singlePhase: {ID: Amina_S_Control.single_phase, type: DataType.uint8},
+                    offlineCurrent: {ID: Amina_S_Control.offline_current, type: DataType.uint8},
+                    offlineSinglePhase: {ID: Amina_S_Control.offline_single_phase, type: DataType.uint8},
+                    timeToOffline: {ID: Amina_S_Control.time_to_offline, type: DataType.uint16},
+                    enableOffline: {ID: Amina_S_Control.enable_offline, type: DataType.uint8},
                     totalActiveEnergy: {ID: Amina_S_Control.total_active_energy, type: DataType.uint32},
                     lastSessionEnergy: {ID: Amina_S_Control.last_session_energy, type: DataType.uint32},
                 },
@@ -178,6 +157,55 @@ const definition = {
             access: 'STATE_GET',
         }),
 
+        enumLookup({
+            name: 'connect_status',
+            cluster: 'aminaControlCluster',
+            attribute: 'connectStatus',
+            lookup: {'Wi-Fi connection': 0, 'Cellular connection': 1, 'OCPP connection': 2, 'Zigbee connection': 4, 'Bluetooth connection': 5, 'Authorization waiting': 14, 'Authorization approved': 15},
+            description: 'Current charging status',
+            access: 'STATE_GET',
+        }),
+
+        numeric({
+            name: 'single_phase',
+            cluster: 'aminaControlCluster',
+            attribute: 'singlePhase',
+            description: 'Enable single phase charging. A restart of charging is required for the change to take effect.',
+            access: 'ALL',
+        }),
+
+        numeric({
+            name: 'offline_current',
+            cluster: 'aminaControlCluster',
+            attribute: 'offlineCurrent',
+            description: 'Amount of current to draw when device is offline.',
+            access: 'ALL',
+        }),
+
+        numeric({
+            name: 'offline_single_phase',
+            cluster: 'aminaControlCluster',
+            attribute: 'offlineSinglePhase',
+            description: 'Enable single phase charging when device is offline',
+            access: 'ALL',
+        }),
+
+        numeric({
+            name: 'time_to_offline',
+            cluster: 'aminaControlCluster',
+            attribute: 'timeToOffline',
+            description: 'Time until charger will behave as offline after connection has been lost.',
+            access: 'ALL',
+        }),
+
+        numeric({
+            name: 'enable_offline',
+            cluster: 'aminaControlCluster',
+            attribute: 'enableOffline',
+            description: 'Enable offline mode when connection to the network is lost.',
+            access: 'ALL',
+        }),
+
         numeric({
             name: 'total_active_energy',
             cluster: 'aminaControlCluster',
@@ -194,7 +222,7 @@ const definition = {
             description: 'Sum of consumed energy last session',
             unit: 'Wh',
             access: 'STATE_GET',
-        }),        
+        }),
     ],
 
     endpoint: (device) => {
@@ -208,6 +236,11 @@ const definition = {
                                                     Amina_S_Control.alarms,
                                                     Amina_S_Control.ev_status,
                                                     Amina_S_Control.connect_status,
+                                                    Amina_S_Control.single_phase,
+                                                    Amina_S_Control.offline_current,
+                                                    Amina_S_Control.offline_single_phase,
+                                                    Amina_S_Control.time_to_offline,
+                                                    Amina_S_Control.enable_offline,
                                                     Amina_S_Control.total_active_energy,
                                                     Amina_S_Control.last_session_energy
                                                     ]);
