@@ -130,14 +130,15 @@ const definition = {
                 attributes: {
                     alarms: {ID: Amina_S_Control.alarms, type: DataType.bitmap16},
                     evStatus: {ID: Amina_S_Control.ev_status, type: DataType.bitmap16},
-                    connectStatus: {ID: Amina_S_Control.connect_status, type: DataType.bitmap16}, // Not implemented?
+                    totalActiveEnergy: {ID: Amina_S_Control.total_active_energy, type: DataType.uint32},
+                    lastSessionEnergy: {ID: Amina_S_Control.last_session_energy, type: DataType.uint32},
+                    // Not implemented in current FW
+                    connectStatus: {ID: Amina_S_Control.connect_status, type: DataType.bitmap16},
                     singlePhase: {ID: Amina_S_Control.single_phase, type: DataType.uint8},
                     offlineCurrent: {ID: Amina_S_Control.offline_current, type: DataType.uint8},
                     offlineSinglePhase: {ID: Amina_S_Control.offline_single_phase, type: DataType.uint8},
                     timeToOffline: {ID: Amina_S_Control.time_to_offline, type: DataType.uint16},
                     enableOffline: {ID: Amina_S_Control.enable_offline, type: DataType.uint8},
-                    totalActiveEnergy: {ID: Amina_S_Control.total_active_energy, type: DataType.uint32},
-                    lastSessionEnergy: {ID: Amina_S_Control.last_session_energy, type: DataType.uint32},
                 },
                 commands: {},
                 commandsResponse: {},
@@ -232,7 +233,7 @@ const definition = {
     configure: async (device, coordinatorEndpoint, logger) => {
         const endpoint = device.getEndpoint(10);
 
-        await endpoint.read(Amina_S_Control.cluster, [// Amina_S_Control.max_current_level, // Not implemented?
+        await endpoint.read(Amina_S_Control.cluster, [Amina_S_Control.max_current_level,
                                                     Amina_S_Control.alarms,
                                                     Amina_S_Control.ev_status,
                                                     Amina_S_Control.connect_status,
